@@ -3,7 +3,7 @@ import { config } from 'dotenv';
 import { PromptTemplate } from "@langchain/core/prompts";
 
 
-async function main() {
+async function setupAgent() {
     config();
     const { GROQ_API_KEY } = process.env;
 
@@ -26,5 +26,3 @@ async function main() {
 
     console.log(result.content);
 }
-
-main()
