@@ -11,8 +11,6 @@ import dotenv from "dotenv";
 dotenv.config();
 
 async function main() {
-    console.log(process.env);
-
     const { GROQ_API_KEY, DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_DATABASE } = process.env;
 
     if (!DB_HOST || !DB_PORT || !DB_USER || !DB_PASSWORD || !DB_DATABASE || !GROQ_API_KEY) {
@@ -25,6 +23,7 @@ async function main() {
         port: parseInt(DB_PORT),
         username: DB_USER,
         password: DB_PASSWORD,
+        database: DB_DATABASE,
         synchronize: true,
         logging: true,
         entities: []
@@ -34,33 +33,33 @@ async function main() {
         appDataSource: dataSource,
     })
 
-    const prompt = PromptTemplate.fromTemplate(`Based on the table schema below, write a SQL query that would answer the user's question:
-        {schema}
+    const prompt = PromptTemplate.fromTemplate(`Based on the table schema below, write a MySQL SQL query that would answer the user's question:
+            {schema}
 
-        Question: {question}
-        SQL Query:`
+            Question: {question}
+            SQL Query:
+            
+            RESPOND ONLY WITH THE SQL QUERY!
+            DO NOT WRAP SQL QUERY IN '\`' BACKTICKS!
+        `
     );
 
     const model = new ChatGroq({
         apiKey: GROQ_API_KEY,
-        model: 'llama3-8b-8192'
+        model: 'llama3-70b-8192'
     });
 
     const sqlQueryGeneratorChain = RunnableSequence.from([
         RunnablePassthrough.assign({
-            schema: async () => db.getTableInfo(),
+            schema: async () => db.getTableInfo(["DBR"]),
         }),
         prompt,
         model.bind({ stop: ["\nSQLResult:"] }),
         new StringOutputParser(),
     ]);
 
-    const result = await sqlQueryGeneratorChain.invoke({
-        question: "How many debtors in the DBR table from the CDS database have dbr_client id TEST01?",
-    });
-
-    console.log({
-        result,
+    await sqlQueryGeneratorChain.invoke({
+        question: "What is the count of debtors in the DBR table from the CDS database have dbr_client id TEST01?",
     });
 
     const finalResponsePrompt =
@@ -77,9 +76,12 @@ async function main() {
             query: sqlQueryGeneratorChain,
         }),
         {
-            schema: async () => db.getTableInfo(),
+            schema: async () => db.getTableInfo(["DBR"]),
             question: (input) => input.question,
-            query: (input) => input.query,
+            query: (input) => {
+                console.log("INPUT =======", input.query.replace('`', ''));
+                return input.query
+            },
             response: (input) => db.run(input.query),
         },
         finalResponsePrompt,
@@ -87,7 +89,7 @@ async function main() {
     ]);
 
     const finalResponse = await fullChain.invoke({
-        question: "How many debtors in the DBR table from the CDS database have dbr_client TEST01?",
+        question: "What is the count of debtors in the DBR table from the CDS database have dbr_client id TEST01?",
     });
 
     console.log(finalResponse);
