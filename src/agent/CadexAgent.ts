@@ -1,27 +1,51 @@
 import { ChatGroq } from '@langchain/groq';
-import { config } from 'dotenv';
-import { PromptTemplate } from '@langchain/core/prompts';
+import { ChatPromptTemplate } from 'langchain/prompts';
+import { DynamicTool } from 'langchain/tools';
+import { AgentExecutor, createToolCallingAgent } from 'langchain/agents';
 
-async function setupAgent() {
-  config();
-  const { GROQ_API_KEY } = process.env;
+const model = new ChatGroq({
+    apiKey: process.env.GROQ_API_KEY,
+    model: 'llama3-70b-8192'
+})
 
-  if (!GROQ_API_KEY) {
-    throw new Error('Missing environment variables');
-  }
+model.bind({
+    tools: [
+        {
+            type: 'function',
+            function: {
+                name: 'get_value_of_foo',
+                parameters: {},
+                description: 'Get the value for foo (also known as FOO)',
+            }
+        }
+    ],
+    tool_choice: 'auto'
+})
 
-  const model = new ChatGroq({
-    apiKey: GROQ_API_KEY,
-    model: 'llama3-70b-8192',
-  });
+const prompt = ChatPromptTemplate.fromMessages([
+    ["system", "You are a helpful assistant"],
+    ["placeholder", "{chat_history}"],
+    ["human", "{input}"],
+    ["placeholder", "{agent_scratchpad}"],
+]);
 
-  const promptTemplate = PromptTemplate.fromTemplate(
-    'Tell me a joke about {topic}'
-  );
+const tools = [
+    new DynamicTool({
+        name: 'getValueOfFoo',
+        description: 'Returns the value of foo (aslo could be Foo or FOO or other variations)',
+        func: async () => 'baz'
+    })
+]
 
-  const chain = promptTemplate.pipe(model);
+const agent = createToolCallingAgent({
+    llm: model,
+    tools,
+    prompt
+})
 
-  const result = await chain.invoke({ topic: 'bears' });
+const agentExecutor = new AgentExecutor({
+    agent,
+    tools
+})
 
-  console.log(result.content);
-}
+export default agentExecutor;
